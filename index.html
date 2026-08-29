@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>10-Year Type 2 Diabetes Risk Estimato</title>
+<title>10-Year Type 2 Diabetes Risk Estimator</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
 <link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Public+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@500;600&display=swap" rel="stylesheet">
@@ -289,10 +289,10 @@
 <div class="wrap">
   <header class="hero">
     <p class="eyebrow">Postpartum metabolic health</p>
-    <h1>10-year type 2 diabetes risk estimator for women</h1>
-    <p class="subtitle" style="margin-top:8px; font-size:16px; color:var(--teal-deep); font-weight:600;">This calculator is intended for women within 1 year after giving birth.</p>
+    <h1>10-year type 2 diabetes risk estimator</h1>
     <p class="subtitle">Based on your pregnancy glucose screening results and health history, this tool estimates your likelihood of developing type 2 diabetes within 10 years after pregnancy.</p>
-     </header>
+    <p class="subtitle" style="margin-top:8px; font-size:13.5px; color:var(--teal-deep); font-weight:600;">This calculator is intended for women within 1 year after giving birth.</p>
+  </header>
 
   <form id="riskForm">
     <div class="panel">
@@ -431,6 +431,7 @@
       <div class="result-text">
         <p class="headline" id="riskHeadline"></p>
         <p id="riskContext"></p>
+        <p id="riskAgeNote" style="font-weight:600; color:var(--teal-deep);"></p>
       </div>
     </div>
     <div class="warning-box" id="fpgWarning">
@@ -552,17 +553,26 @@ ogttRadios.forEach(r => r.addEventListener('change', () => {
 // to the user, since individual bins are based on modest sample sizes
 // (~3,400 per decile, ~680 per ventile) and a precise number would overstate
 // the model's precision at the individual level.
+// Risk category boundaries, derived empirically from decile analysis of the
+// test cohort (test_data.5Y.logit; n=34,190). Predicted probability itself
+// is used only internally to assign a category — it is never shown to the
+// user, since individual bins are based on modest sample sizes (~3,400 per
+// decile) and a precise number would overstate the model's precision at
+// the individual level.
 const RISK_TIERS = [
-  { key: 'low',      label: 'Low',       color: '#2E7D72', max: 0.36,
-    headline: 'Lower estimated risk',
-    context: 'Based on the information provided, your estimated 10-year risk falls in the lower category. Continuing routine postpartum screening is still recommended.' },
-  { key: 'moderate', label: 'Moderate',  color: '#C98A2C', max: 1.86,
+  { key: 'low',      label: 'Low',       color: '#22C55E', max: 0.17,
+    headline: 'Low estimated risk',
+    context: 'Based on the information provided, your estimated 10-year risk falls in the low category. Continuing routine postpartum screening is still recommended.' },
+  { key: 'mild',      label: 'Mild',      color: '#84CC16', max: 0.36,
+    headline: 'Mildly elevated estimated risk',
+    context: 'Based on the information provided, your estimated risk falls in the mild category. Continuing routine postpartum screening is still recommended.' },
+  { key: 'moderate', label: 'Moderate',  color: '#F5C518', max: 0.87,
     headline: 'Moderate estimated risk',
     context: 'Based on the information provided, your estimated risk falls in the moderate category. Discussing follow-up glucose testing with your doctor is worthwhile.' },
-  { key: 'high',     label: 'High',      color: '#D97B3D', max: 9.07,
+  { key: 'high',     label: 'High',      color: '#F97316', max: 1.86,
     headline: 'High estimated risk',
     context: 'Based on the information provided, your estimated risk falls in the high category. We recommend making an appointment with your primary care physician to discuss this result and a follow-up testing plan.' },
-  { key: 'veryhigh', label: 'Very High', color: '#B24A3C', max: Infinity,
+  { key: 'veryhigh', label: 'Very High', color: '#E23636', max: Infinity,
     headline: 'Very high estimated risk',
     context: 'Based on the information provided, your estimated risk falls in the very high category. We recommend seeing your primary care physician soon to discuss this result and next steps for follow-up testing.' }
 ];
@@ -571,11 +581,105 @@ function getRiskTier(pct){
   return RISK_TIERS.find(t => pct < t.max);
 }
 
-// Update tier colors to a green -> yellow -> orange -> red progression
-RISK_TIERS[0].color = '#22C55E'; // Low
-RISK_TIERS[1].color = '#F5C518'; // Moderate
-RISK_TIERS[2].color = '#F97316'; // High
-RISK_TIERS[3].color = '#E23636'; // Very High
+// ---- "Risk age" (equivalent age) calculation ----
+// Concept: build a reference risk curve for a hypothetical low-risk woman
+// (reference GCT + all other factors at baseline/normal levels) across the
+// modeled age range, then find what age that reference woman would need to
+// be to reach the same risk as the actual person. This mirrors "heart age"
+// tools used in cardiovascular risk calculators (Framingham, QRISK, etc).
+//
+// Reference profile, confirmed with Yael:
+//  - GCT: 100 mg/dL (a clearly normal screening result)
+//  - OGTT: "Not performed" (the baseline/reference level — carries no
+//    penalty, unlike "Performed" which has a large negative coefficient)
+//  - All other categorical factors at their baseline/reference level
+//    (no prior GDM, no HTN/PCOS/NAFLD/family history/corticosteroids/
+//    insulin, HbA1c <5.7%, FPG 60-99, BMI normal)
+//  - index.year: current year, same as used for the real prediction, so
+//    the comparison is apples-to-apples
+const REFERENCE_GCT = 100;
+const RISK_AGE_MIN = 20, RISK_AGE_MAX = 50;
+
+function buildReferenceCurve(){
+  const step = 0.1;
+  const rawPoints = [];
+  const year = new Date().getFullYear();
+  for (let age = RISK_AGE_MIN; age <= RISK_AGE_MAX + 1e-9; age += step){
+    const ageBasis = interpBasis(AGE_BASIS, age);
+    const gctBasis = interpBasis(GCT_BASIS, REFERENCE_GCT);
+    let lp = COEF.intercept;
+    lp += ageBasis[0]*COEF.age1 + ageBasis[1]*COEF.age2 + ageBasis[2]*COEF.age3;
+    lp += gctBasis[0]*COEF.gct1 + gctBasis[1]*COEF.gct2 + gctBasis[2]*COEF.gct3;
+    lp += year * COEF.year;
+    // all other terms are 0 at the reference/baseline level
+    const risk = 1 / (1 + Math.exp(-lp));
+    rawPoints.push(risk);
+  }
+  // Enforce monotonicity with isotonic regression (pool-adjacent-violators),
+  // not a simple running max. A running max anchored at the left edge turned
+  // out to flatten almost the entire 20-43 age range here, because the raw
+  // spline curve happens to peak right at age 20 before dipping — a coarser
+  // fix than the noise actually warrants. PAVA instead finds the best-fit
+  // non-decreasing curve by averaging over local violations, which stays
+  // much closer to the model's real (only mildly noisy) shape. This is
+  // consistent with the confirmed finding that observed incidence in the
+  // real cohort rises smoothly and monotonically with age across the full
+  // 20-50 range — the dip is model noise, not a real effect.
+  const monotonicValues = isotonicRegression(rawPoints);
+  return rawPoints.map((_, i) => [RISK_AGE_MIN + i * step, monotonicValues[i]]);
+}
+
+// Pool-adjacent-violators algorithm: returns the best-fit (least-squares)
+// non-decreasing sequence for a noisy input sequence.
+function isotonicRegression(values){
+  const stack = []; // blocks of {sum, count, avg}
+  for (let i = 0; i < values.length; i++){
+    let block = { sum: values[i], count: 1, avg: values[i] };
+    stack.push(block);
+    while (stack.length > 1 && stack[stack.length - 2].avg > stack[stack.length - 1].avg){
+      const b2 = stack.pop();
+      const b1 = stack.pop();
+      const merged = { sum: b1.sum + b2.sum, count: b1.count + b2.count };
+      merged.avg = merged.sum / merged.count;
+      stack.push(merged);
+    }
+  }
+  const result = [];
+  for (const block of stack){
+    for (let i = 0; i < block.count; i++) result.push(block.avg);
+  }
+  return result;
+}
+const REFERENCE_CURVE = buildReferenceCurve();
+
+// Inverts the reference curve: given an actual predicted risk, returns the
+// age at which the reference-profile woman reaches that same risk.
+function riskToAge(actualRisk){
+  const n = REFERENCE_CURVE.length;
+  if (actualRisk <= REFERENCE_CURVE[0][1]) return { age: RISK_AGE_MIN, extreme: 'below' };
+  if (actualRisk >= REFERENCE_CURVE[n-1][1]) return { age: RISK_AGE_MAX, extreme: 'above' };
+  let lo = 0, hi = n - 1;
+  while (hi - lo > 1){
+    const mid = (lo + hi) >> 1;
+    if (REFERENCE_CURVE[mid][1] <= actualRisk) lo = mid; else hi = mid;
+  }
+  const [age0, r0] = REFERENCE_CURVE[lo];
+  const [age1, r1] = REFERENCE_CURVE[hi];
+  const t = r1 === r0 ? 0 : (actualRisk - r0) / (r1 - r0);
+  return { age: age0 + t * (age1 - age0), extreme: null };
+}
+
+function riskAgeText(actualRisk, actualAge){
+  const result = riskToAge(actualRisk);
+  const roundedAge = Math.round(result.age);
+  if (result.extreme === 'below') {
+    return 'Your estimated risk is similar to a woman in her twenties or early thirties with a typical low-risk profile.';
+  }
+  if (result.extreme === 'above') {
+    return 'Your estimated risk is similar to a woman aged 50 or older with a typical low-risk profile.';
+  }
+  return `Your estimated risk is similar to a ${roundedAge}-year-old woman with a typical low-risk profile.`;
+}
 
 // angle 0 = top, ranges -90 (left) to +90 (right) sweeping through the top,
 // following the classic SVG polar-to-cartesian convention (angle measured
@@ -692,6 +796,7 @@ document.getElementById('riskForm').addEventListener('submit', function(e){
     document.getElementById('riskHeadline').textContent = 'Very low estimated risk';
     document.getElementById('riskContext').textContent =
       'Your glucose challenge test result was below 140 mg/dL and your pre-pregnancy BMI was in the normal range — together, this combination is associated with a very low risk. Continuing routine postpartum screening is still recommended.';
+    document.getElementById('riskAgeNote').textContent = '';
     document.getElementById('fpgWarning').classList.remove('show');
     document.getElementById('result-panel').classList.add('show');
     document.getElementById('result-panel').scrollIntoView({behavior:'smooth', block:'nearest'});
@@ -727,6 +832,7 @@ document.getElementById('riskForm').addEventListener('submit', function(e){
 
   document.getElementById('riskHeadline').textContent = tier.headline;
   document.getElementById('riskContext').textContent = tier.context;
+  document.getElementById('riskAgeNote').textContent = riskAgeText(risk, input.age);
 
   document.getElementById('fpgWarning').classList.toggle('show', input.fpg === 'lt60');
 
