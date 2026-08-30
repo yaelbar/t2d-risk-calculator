@@ -431,7 +431,6 @@
       <div class="result-text">
         <p class="headline" id="riskHeadline"></p>
         <p id="riskContext"></p>
-        <p id="riskAgeNote" style="font-weight:600; color:var(--teal-deep);"></p>
       </div>
     </div>
     <div class="warning-box" id="fpgWarning">
@@ -581,6 +580,11 @@ function getRiskTier(pct){
   return RISK_TIERS.find(t => pct < t.max);
 }
 
+
+/* ---- "Risk age" (equivalent age) feature — temporarily disabled ----
+   Kept here (not deleted) so it can be restored once the reference
+   profile is finalized (GCT, HbA1c/FPG "not performed", etc.)
+
 // ---- "Risk age" (equivalent age) calculation ----
 // Concept: build a reference risk curve for a hypothetical low-risk woman
 // (reference GCT + all other factors at baseline/normal levels) across the
@@ -680,6 +684,7 @@ function riskAgeText(actualRisk, actualAge){
   }
   return `Your estimated risk is similar to a ${roundedAge}-year-old woman with a typical low-risk profile.`;
 }
+*/
 
 // angle 0 = top, ranges -90 (left) to +90 (right) sweeping through the top,
 // following the classic SVG polar-to-cartesian convention (angle measured
@@ -796,7 +801,6 @@ document.getElementById('riskForm').addEventListener('submit', function(e){
     document.getElementById('riskHeadline').textContent = 'Very low estimated risk';
     document.getElementById('riskContext').textContent =
       'Your glucose challenge test result was below 140 mg/dL and your pre-pregnancy BMI was in the normal range — together, this combination is associated with a very low risk. Continuing routine postpartum screening is still recommended.';
-    document.getElementById('riskAgeNote').textContent = '';
     document.getElementById('fpgWarning').classList.remove('show');
     document.getElementById('result-panel').classList.add('show');
     document.getElementById('result-panel').scrollIntoView({behavior:'smooth', block:'nearest'});
@@ -832,7 +836,6 @@ document.getElementById('riskForm').addEventListener('submit', function(e){
 
   document.getElementById('riskHeadline').textContent = tier.headline;
   document.getElementById('riskContext').textContent = tier.context;
-  document.getElementById('riskAgeNote').textContent = riskAgeText(risk, input.age);
 
   document.getElementById('fpgWarning').classList.toggle('show', input.fpg === 'lt60');
 
