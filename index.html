@@ -219,23 +219,48 @@
     display:none;
   }
   #result-panel.show{ display:block; }
-  .risk-age-statement{
-    font-family: 'Source Serif 4', Georgia, serif;
-    font-size: 22px;
-    line-height: 1.5;
-    color: var(--ink);
-    margin: 4px 0 0;
+  .gauge-row{
+    display:flex;
+    align-items:center;
+    gap: 28px;
+    flex-wrap: wrap;
+  }
+  .gauge-wrap{
+    flex: 0 0 auto;
+    width: 230px;
     text-align: center;
   }
-  .risk-age-statement .age-number{
-    font-family: 'IBM Plex Mono', monospace;
-    font-weight: 600;
-    color: var(--teal-deep);
+  .gauge-num{
+    margin-top: -6px;
   }
-  .age-illustration{
-    display: flex;
-    justify-content: center;
-    margin-top: 6px;
+  .gauge-num .cat-label{
+    font-family:'IBM Plex Mono', monospace;
+    font-size: 20px;
+    font-weight: 600;
+    color: var(--ink);
+    text-align: center;
+    line-height: 1.25;
+  }
+  .gauge-num .lbl{
+    font-size: 11px;
+    color: var(--ink-soft);
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    margin-top: 2px;
+  }
+  .result-text{
+    flex: 1 1 240px;
+  }
+  .result-text .headline{
+    font-family:'Source Serif 4', Georgia, serif;
+    font-size: 19px;
+    font-weight: 600;
+    margin: 0 0 8px;
+  }
+  .result-text p{
+    font-size: 14px;
+    color: var(--ink-soft);
+    margin: 0 0 8px;
   }
   .warning-box{
     margin-top: 18px;
@@ -264,9 +289,7 @@
 <div class="wrap">
   <header class="hero">
     <p class="eyebrow">Postpartum metabolic health</p>
-    <h1>10-year type 2 diabetes risk estimator</h1>
-    <p class="subtitle">Based on your pregnancy glucose screening results and health history, this tool estimates your likelihood of developing type 2 diabetes within 10 years after pregnancy.</p>
-    <p class="subtitle" style="margin-top:8px; font-size:13.5px; color:var(--teal-deep); font-weight:600;">This calculator is intended for women within 1 year after giving birth.</p>
+    <h1>10-years type 2 diabetes risk estimator for women 1 year after delivery</h1>
   </header>
 
   <form id="riskForm">
@@ -394,11 +417,20 @@
   </form>
 
   <div class="panel" id="result-panel">
-    <h2>Your risk age</h2>
-    <div class="age-illustration">
-      <svg id="ageSvg" viewBox="0 0 320 150" width="300" height="141"></svg>
+    <h2>Your estimated risk category</h2>
+    <div class="gauge-row">
+      <div class="gauge-wrap">
+        <svg id="gaugeSvg" viewBox="0 0 240 165" width="230" height="158"></svg>
+        <div class="gauge-num">
+          <div class="cat-label" id="catLabel">—</div>
+          <div class="lbl">10-year risk</div>
+        </div>
+      </div>
+      <div class="result-text">
+        <p class="headline" id="riskHeadline"></p>
+        <p id="riskContext"></p>
+      </div>
     </div>
-    <p class="risk-age-statement" id="riskAgeStatement"></p>
     <div class="warning-box" id="fpgWarning">
       <strong>Note:</strong> very few women in the study data had a fasting glucose below 60 mg/dL, so the model's estimate for this group is statistically unstable. Please discuss this result directly with your doctor rather than relying on the number shown.
     </div>
@@ -540,20 +572,27 @@ ogttRadios.forEach(r => r.addEventListener('change', () => {
 // to the user, since individual bins are based on modest sample sizes
 // (~3,400 per decile, ~680 per ventile) and a precise number would overstate
 // the model's precision at the individual level.
-// Risk category boundaries, derived empirically from decile analysis of the
-// test cohort (test_data.5Y.logit; n=34,190). Predicted probability itself
-// is used only internally to assign a category — it is never shown to the
-// user, since individual bins are based on modest sample sizes (~3,400 per
-// decile) and a precise number would overstate the model's precision at
-// the individual level.
+// Risk category boundaries, updated per Yael's latest decile table:
+//   0%-0.04%   obs 0.00  -> Low
+//   0.04%-0.07% obs 0.03 -> Low
+//   0.07%-0.11% obs 0.12 -> Mild
+//   0.11%-0.17% obs 0.12 -> Mild
+//   0.17%-0.25% obs 0.20 -> Moderate
+//   0.25%-0.36% obs 0.09 -> Moderate
+//   0.36%-0.54% obs 0.56 -> High
+//   0.54%-0.87% obs 0.61 -> High
+//   0.87%-1.86% obs 1.11 -> High
+//   1.86%-99.25% obs 7.84 -> Very High
+// Predicted probability itself is used only internally to assign a
+// category — it is never shown to the user.
 const RISK_TIERS = [
-  { key: 'low',      label: 'Low',       color: '#22C55E', max: 0.17,
+  { key: 'low',      label: 'Low',       color: '#22C55E', max: 0.07,
     headline: 'Low estimated risk',
     context: 'Based on the information provided, your estimated 10-year risk falls in the low category. Continuing routine postpartum screening is still recommended.' },
-  { key: 'mild',      label: 'Mild',      color: '#84CC16', max: 0.36,
+  { key: 'mild',      label: 'Mild',      color: '#84CC16', max: 0.17,
     headline: 'Mildly elevated estimated risk',
     context: 'Based on the information provided, your estimated risk falls in the mild category. Continuing routine postpartum screening is still recommended.' },
-  { key: 'moderate', label: 'Moderate',  color: '#F5C518', max: 0.87,
+  { key: 'moderate', label: 'Moderate',  color: '#F5C518', max: 0.36,
     headline: 'Moderate estimated risk',
     context: 'Based on the information provided, your estimated risk falls in the moderate category. Discussing follow-up glucose testing with your doctor is worthwhile.' },
   { key: 'high',     label: 'High',      color: '#F97316', max: 1.86,
@@ -811,18 +850,41 @@ document.getElementById('riskForm').addEventListener('submit', function(e){
   const ogttPerformed = document.querySelector('input[name="ogttPerformed"]:checked').value === 'yes';
   const prevGDM = document.querySelector('input[name="prevGDM"]:checked').value === 'yes';
 
+  // Validation: if the person said the 100g OGTT was performed, the three
+  // result fields must actually be filled in — otherwise the model would
+  // silently use empty/NaN values.
+  if (ogttPerformed){
+    const ogtt0Val = document.getElementById('ogtt0').value;
+    const ogtt60Val = document.getElementById('ogtt60').value;
+    const ogtt180Val = document.getElementById('ogtt180').value;
+    if (ogtt0Val === '' || ogtt60Val === '' || ogtt180Val === ''){
+      alert('You indicated that the 100 gram oral glucose tolerance test was performed. Please enter all three results (fasting, 1 hour, and 3 hour) before calculating your risk.');
+      return;
+    }
+  }
+
   const weightKg = parseFloat(document.getElementById('weightKg').value);
   const heightCm = parseFloat(document.getElementById('heightCm').value);
   const { bmi, cat: bmiCat } = bmiCategory(weightKg, heightCm);
   const gctValue = parseFloat(document.getElementById('gct').value);
 
+  // Consistency check: a GCT of 140-199 mg/dL typically prompts a follow-up
+  // 100g OGTT clinically, so flag it if the person said that test wasn't
+  // performed — this is a heads-up, not a hard block, since it's possible
+  // (if unusual) for the follow-up to genuinely have been skipped.
+  if (!ogttPerformed && gctValue >= 140 && gctValue <= 199){
+    alert('Your glucose challenge test result (140-199 mg/dL) is in a range where a follow-up 100 gram oral glucose tolerance test is typically recommended. Please double-check whether this test was actually performed before continuing — your answer affects the accuracy of your result.');
+  }
+
   // Shortcut rule: a GCT under 140 mg/dL together with a normal pre-pregnancy
   // BMI is such a low-risk combination that the full model isn't run — the
   // person is simply told their risk is very low.
   if (gctValue < 140 && bmiCat === 'normal'){
-    document.getElementById('ageSvg').innerHTML = '';
-    document.getElementById('riskAgeStatement').innerHTML =
-      'Your glucose challenge test result was below 140 mg/dL and your pre-pregnancy BMI was in the normal range — together, this combination is associated with a <span class="age-number">very low</span> risk. Continuing routine postpartum screening is still recommended.';
+    document.getElementById('riskHeadline').textContent = 'Very low estimated risk';
+    document.getElementById('riskContext').textContent =
+      'Your glucose challenge test result was below 140 mg/dL and your pre-pregnancy BMI was in the normal range — together, this combination is associated with a very low risk. Continuing routine postpartum screening is still recommended.';
+    document.getElementById('catLabel').textContent = 'Very Low';
+    drawGauge('low');
     document.getElementById('fpgWarning').classList.remove('show');
     document.getElementById('result-panel').classList.add('show');
     document.getElementById('result-panel').scrollIntoView({behavior:'smooth', block:'nearest'});
@@ -850,15 +912,13 @@ document.getElementById('riskForm').addEventListener('submit', function(e){
   };
 
   const risk = computeRisk(input); // fraction, 0-1
-  // Risk age from Yael's empirical predicted-probability -> age conversion
-  // table (RISK_AGE_TABLE), not the earlier linear formula.
-  const riskAge = Math.round(interpRiskAge(risk));
-  const actualAge = Math.round(input.age);
+  const pct = risk * 100; // used only internally to select a category
+  const tier = getRiskTier(pct);
 
-  drawAgeIllustration(actualAge, riskAge);
-
-  document.getElementById('riskAgeStatement').innerHTML =
-    `You are <span class="age-number">${actualAge}</span> years old, but your Type 2 diabetes risk is equivalent to that of a <span class="age-number">${riskAge}</span>-year-old.`;
+  document.getElementById('catLabel').textContent = tier.label;
+  drawGauge(tier.key);
+  document.getElementById('riskHeadline').textContent = tier.headline;
+  document.getElementById('riskContext').textContent = tier.context;
 
   document.getElementById('fpgWarning').classList.toggle('show', input.fpg === 'lt60');
 
